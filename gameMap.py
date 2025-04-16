@@ -8,14 +8,15 @@ class Tile:
       self.size = size
       self.surface = surface  # image of the surface like tree rock etc
       self.obstacle = obstacle  # "tree", "rock", etc.
-      self.walkable = self.obstacle is None
+      self.walkable = None
+      self.biom = "grassland"
 
    def draw(self, screen):
       if self.surface:
          screen.blit(self.surface, (self.x * self.size, self.y * self.size))
 
    def __repr__(self):
-      return f"Tile(x={self.x}, y={self.y}, obs={self.obstacle}, surf={self.surface})"
+      return f"Tile(x={self.x}, y={self.y}, obs={self.obstacle}, surf={self.surface}, walkable={self.walkable}, biom={self.biom})"
 
 class Map:
    def __init__(self, width, height):
@@ -25,7 +26,7 @@ class Map:
 
       self.zoom_factor = 1.0
       self.min_zoom = 1.0
-      self.max_zoom = 5.0
+      self.max_zoom = 2.5
       self.camera_offset = pygame.Vector2(0, 0)
    
 
@@ -49,13 +50,15 @@ class Map:
          - 'top-' for top level assets
          - 'sound-' for audio files
          - 'bg-' for backgrounds
+         - 'entity' for entities
+         - 'obj' for objects
 
          Returns: Dictionary containing sorted asset lists
       """
       from pathlib import Path
 
       data = {
-         "topLvlAssets": {"trees": [], "rocks": [], "other": []},
+         "topLvlAssets": {"trees": [], "rocks": [], "water": []},
          "entities": {"hidder": [], "seeker": [], "animals": []},
          "sounds": {"walking": [], "backgroundMusic": [], "hit": []},
          "background": [],
@@ -95,7 +98,7 @@ class Map:
             if subtype in data[key]:
                data[key][subtype].append(asset)
             else:
-               data[key]["other" if key == "topLvlAssets" else "animals"].append(asset)
+               data[key]["water" if key == "topLvlAssets" else "animals"].append(asset)
 
       return data
 
@@ -112,12 +115,17 @@ class Map:
          if cluster_type == "tree":
             cluster_asset = random.choice(tree_assets)
             obstacle_type = "tree"
+            biom = "forest"
+            
          elif cluster_type == "rock":
             cluster_asset = random.choice(rock_assets)
             obstacle_type = "rock"
+            biom = "rocks"
+
          else:  #mixed
             cluster_asset = random.choice(tree_assets * 3 + rock_assets)
             obstacle_type = "tree" if cluster_asset in tree_assets else "rock"
+            biom = "mixed"
 
          cx = random.randint(0, self.cols - 1)
          cy = random.randint(0, self.rows - 1)
@@ -132,11 +140,87 @@ class Map:
             if 0 <= tx < self.cols and 0 <= ty < self.rows:
                tile = self.map_data[tx][ty]
                if tile.obstacle is None:
-                  self.map_data[tx][ty].surface = pygame.transform.scale(cluster_asset, (16, 16))
-                  self.map_data[tx][ty].obstacle = obstacle_type
-                  self.map_data[tx][ty].walkable = False
+                  tile.surface = pygame.transform.scale(cluster_asset, (16, 16))
+                  tile.obstacle = obstacle_type
+                  tile.walkable = True if obstacle_type == "tree" else False
+                  tile.biom = biom
 
-                  self.map_data[tx][ty].draw(self.map_surface)
+                  tile.draw(self.map_surface)
+
+   def generate_perlin_map(self, scale=7, octaves=2, persistence=0.3, lacunarity=1.6):
+      """Map generator using tuned Perlin noise for more grass and forest."""
+
+      from noise import pnoise2
+
+      for x in range(self.cols):
+        for y in range(self.rows):
+            nx = x / self.cols * scale
+            ny = y / self.rows * scale
+
+            noise_val = pnoise2(nx, ny, 
+                                 octaves=octaves, persistence=persistence, 
+                                 lacunarity=lacunarity)
+
+            # Normalize to 0-1
+            noise_val = (noise_val + 1) / 2.0
+
+            tile = self.map_data[x][y]
+
+            if noise_val < 0.33:
+               tile.obstacle = "water"
+               tile.walkable = False
+               tile.surface = random.choice(self.assets["topLvlAssets"]["water"])
+               tile.biom = "lake"
+
+            elif noise_val < 0.35:
+               tile.obstacle = "rock"
+               tile.walkable = False
+               tile.surface = random.choice(self.assets["topLvlAssets"]["rocks"])
+               tile.biom = "rocky"
+
+            elif noise_val < 0.48:
+               tile.obstacle = "trees"
+               tile.walkable = True
+               tile.surface = random.choice(self.assets["topLvlAssets"]["trees"])
+               tile.biom = "forest"
+
+            else:
+               tile.obstacle = None  # Grassland
+               tile.walkable = True
+               tile.surface = None  # Or your grass tile
+
+            if tile.surface:
+               tile.surface = pygame.transform.scale(tile.surface, (16, 16))
+
+            tile.draw(self.map_surface)
+
+   def spawn_players(self):
+      hidder = self.assets["entities"]["hidder"][0]
+      seeker = self.assets["entities"]["seeker"][0]
+
+      cord_hidder_x = random.randint(0, self.cols - 1)
+      cord_hidder_y = random.randint(0, self.rows - 1)
+
+      #place the agents
+      tile = self.map_data[cord_hidder_x][cord_hidder_y]
+
+      tile.surface = pygame.transform.scale(hidder, (16, 16))
+      tile.obstacle = "player-hidder"
+      tile.walkable = True
+
+      tile.draw(self.map_surface)
+
+      cord_seeker_x = random.randint(0, self.cols - 1)
+      cord_seeker_y = random.randint(0, self.rows - 1)
+
+      #place the agents
+      tile = self.map_data[cord_seeker_x][cord_seeker_y]
+
+      tile.surface = pygame.transform.scale(seeker, (16, 16))
+      tile.obstacle = "player-seeker"
+      tile.walkable = True
+
+      tile.draw(self.map_surface)
 
    def mapGenerator(self):
       """
@@ -155,8 +239,9 @@ class Map:
          self.map_surface.fill((255, 255, 255))
 
       # Obstacles in clusters
-      self.generate_obstacles()
-      self.debug_draw_obstacles(self.map_surface)
+      self.generate_perlin_map()
+      #self.spawn_players()
+      #self.debug_draw_obstacles(self.map_surface)
 
       return self.map_surface
 

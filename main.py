@@ -10,14 +10,15 @@ class Game():
       self.width = 1280
       self.height = 640
 
-      self.screen = pygame.display.set_mode((self.width, self.height))
+      flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+
+      self.screen = pygame.display.set_mode((self.width, self.height), flags)
 
       #Set the title
       pygame.display.set_caption('Hide and Seek', icontitle='icon')
 
       self.gameMap = Map(self.width, self.height)
       self.map_surface = self.gameMap.mapGenerator()
-      print(self.gameMap.loadAssets())
 
       #self.gameMap.draw_grid(self.map_surface)
    
@@ -26,7 +27,11 @@ class Game():
       dragging = False
       last_mouse_pos = None
 
+      clock = pygame.time.Clock()
+
       while running:
+         clock.tick(120)
+
          for event in pygame.event.get():
             if event.type == pygame.QUIT:
                running = False
@@ -40,6 +45,7 @@ class Game():
                if event.button == 1:
                      dragging = True
                      last_mouse_pos = pygame.mouse.get_pos()
+                     print(self.gameMap.get_tile(last_mouse_pos))
                      
             elif event.type == pygame.MOUSEBUTTONUP:
                if event.button == 1:
@@ -59,7 +65,7 @@ class Game():
          
          self.screen.fill((255, 255, 255))
          self.gameMap.draw(self.screen)
-
+         
          pygame.display.flip()
 
       pygame.quit()        
