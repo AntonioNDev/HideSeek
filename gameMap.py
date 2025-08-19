@@ -10,13 +10,14 @@ class Tile:
       self.obstacle = obstacle  # "tree", "rock", etc.
       self.walkable = None
       self.biom = "grassland"
+      self.explored = False
 
    def draw(self, screen):
       if self.surface:
          screen.blit(self.surface, (self.x * self.size, self.y * self.size))
 
    def __repr__(self):
-      return f"Tile(x={self.x}, y={self.y}, obs={self.obstacle}, surf={self.surface}, walkable={self.walkable}, biom={self.biom})"
+      return f"Tile(x={self.x}, y={self.y}, obs={self.obstacle}, surf={self.surface}, walkable={self.walkable}, biom={self.biom}, explored={self.explored})"
 
 class Map:
    def __init__(self, width, height):
@@ -26,9 +27,11 @@ class Map:
 
       self.zoom_factor = 1.0
       self.min_zoom = 1.0
-      self.max_zoom = 2.5
+      self.max_zoom = 2.8
       self.camera_offset = pygame.Vector2(0, 0)
    
+      self.hidder = (0, 0)
+      self.seeker = (0, 0)
 
       self.cols = self.width // self.tile_size
       self.rows = self.height // self.tile_size
@@ -59,7 +62,7 @@ class Map:
 
       data = {
          "topLvlAssets": {"trees": [], "rocks": [], "water": []},
-         "entities": {"hidder": [], "seeker": [], "animals": []},
+         "entities": {"hidder": [], "seeker": [], "animals": [], "army": []},
          "sounds": {"walking": [], "backgroundMusic": [], "hit": []},
          "background": [],
          "objects": []
@@ -69,14 +72,14 @@ class Map:
          if not f.is_file() or "-" not in f.stem:
             continue
          
-         category, subtype = f.stem.split("-", 1)
+         category, subtype, assetDesc = f.stem.split("-", 2)
 
          key = {
             "top": "topLvlAssets",
             "sound": "sounds",
             "bg": "background",
             "entity": "entities",
-            "obj": "objects"
+            "obj": "objects",
          }.get(category)
 
          if not key:
@@ -102,7 +105,9 @@ class Map:
 
       return data
 
-   def generate_obstacles(self, cluster_count=25, cluster_size_range=(10, 30)):
+   def generate_obstacles1(self, cluster_count=25, cluster_size_range=(10, 30)):
+      """Generate game map using simple algorithm to spread assets in clusters"""
+
       tree_assets = self.assets["topLvlAssets"]["trees"]
       rock_assets = self.assets["topLvlAssets"]["rocks"]
 
@@ -147,7 +152,7 @@ class Map:
 
                   tile.draw(self.map_surface)
 
-   def generate_perlin_map(self, scale=7, octaves=2, persistence=0.3, lacunarity=1.6):
+   def generate_obstacles2(self, scale=7, octaves=2, persistence=0.3, lacunarity=1.6):
       """Map generator using tuned Perlin noise for more grass and forest."""
 
       from noise import pnoise2
@@ -194,8 +199,11 @@ class Map:
 
             tile.draw(self.map_surface)
 
+   def get_players(self):
+      return [self.seeker, self.hidder]
+
    def spawn_players(self):
-      hidder = self.assets["entities"]["hidder"][0]
+      hidder = self.assets["entities"]["army"][0]
       seeker = self.assets["entities"]["seeker"][0]
 
       cord_hidder_x = random.randint(0, self.cols - 1)
@@ -204,10 +212,11 @@ class Map:
       #place the agents
       tile = self.map_data[cord_hidder_x][cord_hidder_y]
 
-      tile.surface = pygame.transform.scale(hidder, (16, 16))
+      tile.surface = pygame.transform.scale(hidder, (20, 20))
       tile.obstacle = "player-hidder"
       tile.walkable = True
 
+      self.hidder = (tile.x, tile.y)
       tile.draw(self.map_surface)
 
       cord_seeker_x = random.randint(0, self.cols - 1)
@@ -216,16 +225,19 @@ class Map:
       #place the agents
       tile = self.map_data[cord_seeker_x][cord_seeker_y]
 
-      tile.surface = pygame.transform.scale(seeker, (16, 16))
+      tile.surface = pygame.transform.scale(seeker, (20, 20))
       tile.obstacle = "player-seeker"
       tile.walkable = True
 
+      self.seeker = (tile.x, tile.y)
       tile.draw(self.map_surface)
 
-   def mapGenerator(self):
+   def generateMapLayers(self):
       """
       Generates a random map by setting the background image from assets.
-      Requires self.assets["background"] to contain a pre-loaded Surface.
+      Requires self.assets["background"] to contain a pre-loaded Surface and then
+      it generates layer by layer including the assets like the trees, rocks, water, etc
+      and then the players and other entities.
       """
       self.map_surface = pygame.Surface((self.width, self.height))
 
@@ -236,12 +248,12 @@ class Map:
          self.map_surface.blit(scaled_bg, (0, 0))
 
       else:
+         self.draw_grid()
          self.map_surface.fill((255, 255, 255))
 
-      # Obstacles in clusters
-      self.generate_perlin_map()
-      #self.spawn_players()
-      #self.debug_draw_obstacles(self.map_surface)
+      #LAYERS 
+      self.spawn_players()
+      self.generate_obstacles2()
 
       return self.map_surface
 
@@ -317,7 +329,7 @@ class Map:
       Zooms into the point under mouse_pos. Direction: +1 (in), -1 (out)
       """
       old_zoom = self.zoom_factor
-      zoom_change = 0.1 * direction
+      zoom_change = 0.3 * direction
       new_zoom = max(self.min_zoom, min(self.max_zoom, self.zoom_factor + zoom_change))
 
       if new_zoom != old_zoom:
