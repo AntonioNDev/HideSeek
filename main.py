@@ -2,6 +2,7 @@ import pygame
 import random
 from map_generator import Map
 from agents import Hider, Seeker
+from animals import Cow
 
 pygame.init()
 pygame.font.init()
@@ -29,7 +30,7 @@ class Game():
       #let the hider hide
       self.hider.hide(self.seeker.get_tile_pos())
       self.seeker.search(self.hider.get_tile_pos())
-   
+
    def spawn_agents(self):
       def get_spawn_tile():
          while True:
@@ -93,6 +94,7 @@ class Game():
                f"Mode: {getattr(agent, 'mode', 'N/A')}",
                f"Energy: {getattr(agent, 'energy', 0):.2f}",
                f"Speed: {getattr(agent, 'speed', 0):.2f}",
+               f"Hunger: {getattr(agent, 'hunger', 0):.2f}",
                f"Tile: {tile_pos}",
                f"WorldPos: ({int(agent.x)},{int(agent.y)})",
          ]
@@ -103,7 +105,7 @@ class Game():
             lines.append(f"Caught: {getattr(agent, 'caught', False)}")
 
          for i, line in enumerate(lines):
-            text = DEBUGING_FONT.render(line, True, (0, 0, 0))
+            text = DEBUGING_FONT.render(line, True, (0,0,0))
             self.screen.blit(text, (10, offset_y + i * 16))
 
          offset_y += len(lines) * 16 + 10  # Space before next agent’s block
@@ -118,7 +120,7 @@ class Game():
       clock = pygame.time.Clock()
 
       while running:
-         #Locked for 120 fps
+         #Locked for 40 fps
          clock.tick(60)
 
          #Game events logic for drag and drop, quit and etc...
@@ -140,6 +142,7 @@ class Game():
                if event.button == 1:
                   dragging = True
                   last_mouse_poss = pygame.mouse.get_pos()
+                  print(self.gameMap.get_tile(last_mouse_poss))
             
             elif event.type == pygame.MOUSEBUTTONUP:
                if event.button == 1:
@@ -175,7 +178,7 @@ class Game():
          hider_poss = self.hider.get_tile_pos()
 
          # Update the Hider
-         self.hider.update()
+         self.hider.update(seeker_poss)
          self.hider.hide(seeker_poss)
 
          # Update the Seeker
@@ -189,6 +192,7 @@ class Game():
          # debugging mode
          if self.debug_mode:
             self.debugging([self.hider, self.seeker])
+            self.gameMap.paint_explored_tiles(self.screen, self.camera_offset, self.zoom)
 
          pygame.display.flip()
       

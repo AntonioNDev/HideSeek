@@ -61,7 +61,7 @@ class Map:
       from pathlib import Path
 
       data = {
-         "topLvlAssets": {"trees": [], "rocks": [], "water": []},
+         "topLvlAssets": {"trees": [], "rocks": [], "water": [], "grass": []},
          "entities": {"hidder": [], "seeker": [], "animals": [], "army": []},
          "sounds": {"walking": [], "backgroundMusic": [], "hit": []},
          "background": [],
@@ -190,9 +190,11 @@ class Map:
                tile.biom = "forest"
 
             else:
+               tile.surface = self.assets["topLvlAssets"]["grass"]
+               print(tile.surface)
                tile.obstacle = None  # Grassland
                tile.walkable = True
-               tile.surface = None  # Or your grass tile
+               #tile.surface = None  # Or your grass tile
 
             if tile.surface:
                tile.surface = pygame.transform.scale(tile.surface, (16, 16))

@@ -187,21 +187,12 @@ class Map:
          return self.map_data[x][y]
       return None
 
-   def update_tile(self, x, y, obstacle_type=None):
-      tile = self.get_tile(x, y)
-      if tile:
-         if obstacle_type == "tree":
-            tile.surface = random.choice(self.assets["trees"])
-            tile.obstacle = "tree"
-            tile.walkable = True
-         elif obstacle_type == "rock":
-            tile.surface = random.choice(self.assets["rocks"])
-            tile.obstacle = "rock"
-            tile.walkable = False
-         else:
-            tile.surface = None
-            tile.obstacle = None
-            tile.walkable = True
+   def update_tile(self, cords:tuple, obstacle):
+      tile = self.get_tile(cords)
+
+      if obstacle:
+         tile.obstacle = obstacle
+         tile.walkable = True if obstacle is None else False
 
    def is_walkable(self, x, y):
       tile = self.get_tile_at(x, y)
@@ -228,7 +219,24 @@ class Map:
                center = (x * self.tile_size + self.tile_size//2, 
                y * self.tile_size + self.tile_size//2)
                pygame.draw.circle(screen, (255, 0, 0), center, 3)
-            
+   
+   def paint_explored_tiles(self, screen, camera_offset, zoom):
+      """Visual debug - change color of the explored tiles"""
+      for x in range(self.cols):
+         for y in range(self.rows):
+            tile = self.map_data[x][y]
+            if tile.explored:
+               # world coordinates (center of tile)
+               world_x = x * self.tile_size + self.tile_size // 2
+               world_y = y * self.tile_size + self.tile_size // 2
+
+               # apply camera offset + zoom
+               screen_x = (world_x - camera_offset[0]) * zoom
+               screen_y = (world_y - camera_offset[1]) * zoom
+
+               # draw red dot (adjust radius to scale with zoom if needed)
+               pygame.draw.circle(screen, (255, 0, 0), (int(screen_x), int(screen_y)), max(1, int(3 * zoom)))
+
    def tile_to_pixel(self, tilepos):
       tx, ty = tilepos
       return tx * self.tile_size, ty * self.tile_size
