@@ -17,7 +17,7 @@ class Game():
       flags = pygame.HWSURFACE | pygame.DOUBLEBUF
       self.screen = pygame.display.set_mode((self.width, self.height), flags)
 
-      pygame.display.set_caption('Hide and Seek', icontitle='icon')
+      pygame.display.set_caption('Hide and Seek')
 
       self.gameMap = Map(self.width, self.height)
 
