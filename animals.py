@@ -1,112 +1,119 @@
-import pygame
 import random
-import math
-from heapq import heappush, heappop
 
-SPEED = 1
+from entity import Entity
+from pathFinding import AStar
 
-class Animal:
+# CONFIG
+BASE_SPEED = 1
+SPRINT_SPEED = 1.3
+
+MAX_STAMINA = 5
+STAMINA_DRAIN = 0.02
+STAMINA_REGEN = 0.01
+
+
+# Base animal class
+class Animal(Entity):
    def __init__(self, x, y, image, map_ref):
-      self.y = y
-      self.x = x
-      self.image = image
-      self.map = map_ref
-      self.path = tuple()
+      super().__init__(x, y, image, map_ref)
 
-      self.speed = SPEED
-      self.health = 100
-      self.tile_size = map_ref.tile_size
-      self.rect = pygame.Rect(x, y, self.tile_size, self.tile_size)
+      self.pathfinder = AStar(map_ref)
 
-   def draw(self, screen):
-      """ Draw the animals on the map each frame """
-      zoomed_x = (self.x * self.map.zoom_factor) - self.map.camera_offset.x
-      zoomed_y = (self.y * self.map.zoom_factor) - self.map.camera_offset.y
-      zoomed_image = pygame.transform.scale(
-         self.image, 
-         (int(self.tile_size * self.map.zoom_factor), int(self.tile_size * self.map.zoom_factor))
-      )
+      # Needs
+      self.stamina = MAX_STAMINA
 
-      screen.blit(zoomed_image, (zoomed_x, zoomed_y))
-   
-   def update(self):
-      """ Logic for the agents movment it updates their position each frame while handling the energy and movement"""
+      # State
+      self.state = "idle"
+
+      # Wander control
+      self.last_wander_time = 0
+      self.wander_interval = random.randint(2000, 5000)
+
+   # Main update func
+   def update(self, context):
+      self._update_stamina()
+
+      action = self.decide(context)
+      self.execute(action, context)
+
+      self.move_along_path()
+
+   def _update_stamina(self):
+      if self.state == "fleeing":
+         self.stamina = max(0, self.stamina - STAMINA_DRAIN)
+      else:
+         self.stamina = min(MAX_STAMINA, self.stamina + STAMINA_REGEN)
+
+   # Decisions
+   def decide(self, context):
+      # 1. Danger has highest priority
+      if context.get("danger"):
+         return "flee"
+
+      # 2. Exhaustion
+      if self.stamina <= 0.5:
+         return "rest"
+
+      # 3. Default behavior
+      return "wander"
+
+   # Executions
+   def execute(self, action, context):
+      if action == "flee":
+         self.state = "fleeing"
+         self.speed = SPRINT_SPEED
+         self.flee(context["danger_pos"])
+
+      elif action == "rest":
+         self.state = "resting"
+         self.speed = 0
+         self.path.clear()
+
+      elif action == "wander":
+         self.state = "wandering"
+         self.speed = BASE_SPEED
+         self.wander()
+
+   # Behaviors
+   def wander(self):
       if self.path:
-         tx, ty = self.path[0]
-         px = tx * self.tile_size
-         py = ty * self.tile_size
-         dx = px - self.x
-         dy = py - self.y
+         return
 
-         dist = math.hypot(dx, dy)
+      cx, cy = self.get_tile_pos()
 
-         if dist < self.speed and dist > 0:
-            self.x, self.y = px, py
-            self.path.pop(0)
+      # Small local movement → clustering behavior
+      for _ in range(5):
+         tx = cx + random.randint(-3, 3)
+         ty = cy + random.randint(-3, 3)
 
-         elif dist > 0:
-            self.x += self.speed * dx / dist
-            self.y += self.speed * dy / dist
-         else:
-            # Already exactly at target — just pop it
-            self.path.pop(0)
+         if self.map.is_walkable(tx, ty):
+            path = self.pathfinder.find_path((cx, cy), (tx, ty))
+            if path:
+               self.set_path(path)
+               return
 
-         self.rect.topleft = (self.x, self.y)
-   
-   def set_path(self, path):
-      self.path = path
-   
-   def get_tile_pos(self):
-      return int(self.x // self.tile_size), int(self.y // self.tile_size)
+   def flee(self, danger_pos):
+      cx, cy = self.get_tile_pos()
 
-   def heuristic(self, a, b):
-      """logic to find the shortest path from point A to point B"""
+      dx = cx - danger_pos[0]
+      dy = cy - danger_pos[1]
 
-      return abs(a[0] - b[0]) + abs(a[1] - b[1])
-   
-   def a_star(self, start, end):
-      """ A-star algorithm to find the best path from start to end"""
-      if start == end:
-         return []
+      # Normalize direction
+      length = max(1, abs(dx) + abs(dy))
+      dx //= length
+      dy //= length
 
-      open_set = []
-      came_from = {}
-      g_score = {start: 0}
-      f_score = {start: self.heuristic(start, end)}
-      heappush(open_set, (f_score[start], start))
+      # Run away multiple tiles
+      tx = cx + dx * random.randint(3, 6)
+      ty = cy + dy * random.randint(3, 6)
 
-      while open_set:
-         _, current = heappop(open_set)
-         if current == end:
-            return self.reconstruct_path(came_from, current)
+      if self.map.is_walkable(tx, ty):
+         path = self.pathfinder.find_path((cx, cy), (tx, ty))
+         if path:
+               self.set_path(path)
 
-         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            neighbor = (current[0] + dx, current[1] + dy)
-
-            if not self.map.is_walkable(*neighbor):
-               continue
-
-            tentative_g = g_score[current] + 1
-
-            if neighbor not in g_score or tentative_g < g_score[neighbor]:
-               came_from[neighbor] = current
-               g_score[neighbor] = tentative_g
-               f_score[neighbor] = tentative_g + self.heuristic(neighbor, end)
-               heappush(open_set, (f_score[neighbor], neighbor))
-      
-      return []
-
-   def reconstruct_path(self, came_from, current):
-      path = [current]
-      while current in came_from:
-         current = came_from[current]
-         path.append(current)
-
-      return path[::-1]
-   
 class Cow(Animal):
-    def __init__(self, x, y, image, map_ref):
-        super().__init__(x, y, image, map_ref)
-        self.attacked = False
-        self.last_wander_time = 0
-        self.wander_interval = random.randint(10000, 15000)  # 10–15 seconds
+   def __init__(self, x, y, image, map_ref):
+      super().__init__(x, y, image, map_ref)
+
+      self.type = "cow"

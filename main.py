@@ -1,11 +1,13 @@
 import pygame
 import random
+
 from map_generator import Map
-from agents import Hider, Seeker
+from agents import Villager, Seeker
 from animals import Cow
 
 pygame.init()
 pygame.font.init()
+
 DEBUGING_FONT = pygame.font.SysFont(None, 18)
 
 class Game():
@@ -14,55 +16,16 @@ class Game():
       self.height = 640
       self.debug_mode = False
 
-      flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+      flags = pygame.HWSURFACE | pygame.DOUBLEBUF # If hardware acceleration is possible use it
       self.screen = pygame.display.set_mode((self.width, self.height), flags)
+      pygame.display.set_caption('Hide&Seek')
 
-      pygame.display.set_caption('Hide and Seek')
-
+      # WORLD
       self.gameMap = Map(self.width, self.height)
-
       self.gameMap.generate_map()
-      self.hider, self.seeker = self.spawn_agents()
 
       self.camera_offset = self.gameMap.camera_offset
       self.zoom = self.gameMap.zoom_factor
-
-      #let the hider hide
-      self.hider.hide(self.seeker.get_tile_pos())
-      self.seeker.search(self.hider.get_tile_pos())
-
-   def spawn_agents(self):
-      def get_spawn_tile():
-         while True:
-            x = random.randint(0, self.gameMap.cols - 1)
-            y = random.randint(0, self.gameMap.rows - 1)
-            tile = self.gameMap.map_data[x][y]
-
-            if tile.walkable:
-               return x, y
-      
-      #Try to load images for the seeker and the hider
-      try:
-         self.hider_img = pygame.image.load("assets/entity-army-archer1.png").convert_alpha()
-         self.seeker_img = pygame.image.load("assets/entity-seeker-man1.png").convert_alpha()
-      except Exception as e:
-         raise RuntimeError(f"Failed to load one or more asset images: {e}")
-      
-      #Spawn the Hider
-      hider_spawn = get_spawn_tile()
-
-      #Spawn the Seeker far from the Hider
-      seeker_spawn = get_spawn_tile()
-      while abs(hider_spawn[0] - seeker_spawn[0]) + abs(hider_spawn[1] - seeker_spawn[1]) < 15:
-         seeker_spawn = get_spawn_tile()
-      
-      hider_px = self.gameMap.tile_to_pixel(hider_spawn)
-      seeker_px = self.gameMap.tile_to_pixel(seeker_spawn)
-
-      hider = Hider(hider_px[0], hider_px[1], self.hider_img, self.gameMap)
-      seeker = Seeker(seeker_px[0], seeker_px[1], self.seeker_img, self.gameMap)
-
-      return hider, seeker
 
    # Debugging info logic for the agents
    def debugging(self, agents):
@@ -101,11 +64,11 @@ class Game():
 
          if isinstance(agent, Seeker):
             lines.append(f"Vision: {getattr(agent, 'vision', 'N/A')}")
-         elif isinstance(agent, Hider):
+         elif isinstance(agent, Villager):
             lines.append(f"Caught: {getattr(agent, 'caught', False)}")
 
          for i, line in enumerate(lines):
-            text = DEBUGING_FONT.render(line, True, (0,0,0))
+            text = DEBUGING_FONT.render(line, True, (0,0,0), (255,255,255))
             self.screen.blit(text, (10, offset_y + i * 16))
 
          offset_y += len(lines) * 16 + 10  # Space before next agent’s block
@@ -120,14 +83,13 @@ class Game():
       clock = pygame.time.Clock()
 
       while running:
-         #Locked for 40 fps
+         #Locked for 60 fps
          clock.tick(60)
 
          #Game events logic for drag and drop, quit and etc...
          for event in pygame.event.get():
             if event.type == pygame.QUIT:
                running = False
-               break
 
             elif event.type == pygame.KEYDOWN:
                if event.key == pygame.K_d:
@@ -136,6 +98,8 @@ class Game():
             
             elif event.type == pygame.MOUSEWHEEL:
                mouse_pos = pygame.mouse.get_pos()
+
+               # Zoom
                self.gameMap.zoom_at(mouse_pos, event.y, self.width, self.height)
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -148,50 +112,34 @@ class Game():
                if event.button == 1:
                   dragging = False
             
-            elif event.type == pygame.MOUSEMOTION:
-               if dragging:
-                  mouse_pos = pygame.mouse.get_pos() 
-                  dx = mouse_pos[0] - last_mouse_poss[0] 
-                  dy = mouse_pos[1] - last_mouse_poss[1] 
+            elif event.type == pygame.MOUSEMOTION and dragging:
+               mouse_pos = pygame.mouse.get_pos() 
+               dx = mouse_pos[0] - last_mouse_poss[0] 
+               dy = mouse_pos[1] - last_mouse_poss[1] 
 
-                  self.gameMap.camera_offset -= pygame.Vector2(dx, dy) 
-                  self.gameMap.clamp_camera(self.width, self.height) 
-                  last_mouse_poss = mouse_pos
-            
-            elif event.type == pygame.MOUSEWHEEL:
-               if dragging and last_mouse_poss is not None:
-                  mouse_poss = pygame.mouse.get_pos()
-                  dx, dy = mouse_poss[0]-last_mouse_poss[0], mouse_poss[1]-last_mouse_poss[1]
+               self.gameMap.camera_offset -= pygame.Vector2(dx, dy) 
+               self.gameMap.clamp_camera(self.width, self.height) 
+               
+               last_mouse_poss = mouse_pos
 
-                  #update the camera offset
-                  self.gameMap.camera_offset -= pygame.Vector2(dx, dy)
-                  self.gameMap.clamp_camera(self.width, self.height)
+                  
+         # -------------------------
+         # UPDATE WORLD
+         # -------------------------
+         #self.update_entities()
 
-                  last_mouse_poss = mouse_poss
-         
-         # Update the world
-         self.screen.fill((255, 255, 255)) # White background for temporary
+         # -------------------------
+         # RENDER WORLD
+         # -------------------------
+         self.screen.fill((255, 255, 255))
          self.gameMap.draw(self.screen)
 
-         # Update the agents positions
-         seeker_poss = self.seeker.get_tile_pos()
-         hider_poss = self.hider.get_tile_pos()
+         #self.draw_entities()
 
-         # Update the Hider
-         self.hider.update(seeker_poss)
-         self.hider.hide(seeker_poss)
-
-         # Update the Seeker
-         self.seeker.update(hider_poss)
-         self.seeker.search(hider_poss)
-
-         # Draw agents on the map
-         self.hider.draw(self.screen)
-         self.seeker.draw(self.screen)
-
-         # debugging mode
+         # -------------------------
+         # DEBUG
+         # -------------------------
          if self.debug_mode:
-            self.debugging([self.hider, self.seeker])
             self.gameMap.paint_explored_tiles(self.screen, self.camera_offset, self.zoom)
 
          pygame.display.flip()
